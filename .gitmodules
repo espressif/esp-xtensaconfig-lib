@@ -1,0 +1,3 @@
+[submodule "config"]
+	path = config
+	url = ssh://git@gitlab.espressif.cn:27227/idf/xtensa-overlays.git
