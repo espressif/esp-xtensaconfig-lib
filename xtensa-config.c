@@ -30,8 +30,8 @@
 #define XTENSA_CONFIG_ENTRY(a) a
 struct xtensa_config xtensa_config = XTENSA_CONFIG_INITIALIZER;
 
-#define _STRINGIFY(a) #a
-#define STRINGIFY(a) _STRINGIFY(a)
+#define STRINGIFY1(a) #a
+#define STRINGIFY(a) STRINGIFY1(a)
 
 #undef XTENSA_CONFIG_ENTRY
 #define XTENSA_CONFIG_ENTRY(a) "__" #a "=" STRINGIFY(a)

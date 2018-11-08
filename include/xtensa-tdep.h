@@ -17,6 +17,9 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
+#ifndef XTENSA_TDEP_H
+#define XTENSA_TDEP_H
+
 
 #include "arch/xtensa.h"
 
@@ -272,6 +275,7 @@ struct gdbarch_tdep
     0,				 /* fp_layout */			\
     0,				 /* fp_layout_bytes */			\
     0,				 /* gregmap */				\
+    0,				 /* type_entries */ \
   }
 #define XTENSA_CONFIG_INSTANTIATE(rmap,spill_size)	\
 	struct gdbarch_tdep xtensa_tdep = \
@@ -290,3 +294,4 @@ struct gdbarch_tdep
    data structure to their corresponding register in the AR register 
    file (see xtensa-tdep.c).  */
 
+#endif /* XTENSA_TDEP_H */

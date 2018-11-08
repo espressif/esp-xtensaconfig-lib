@@ -17,8 +17,10 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#ifndef XTENSA_H
-#define XTENSA_H
+#ifndef ARCH_XTENSA_H
+#define ARCH_XTENSA_H
+
+#include <stdint.h>
 
 /* Xtensa ELF core file register set representation ('.reg' section).
    Copied from target-side ELF header <xtensa/elf.h>.  */
@@ -43,4 +45,4 @@ typedef struct
 #define XTENSA_ELF_NGREG (sizeof (xtensa_elf_gregset_t) \
 			  / sizeof (xtensa_elf_greg_t))
 
-#endif
+#endif // ARCH_XTENSA_H

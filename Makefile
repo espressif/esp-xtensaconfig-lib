@@ -5,7 +5,7 @@ SOURCE_FILES = xtensa-config.c \
 INCLUDE += -Iinclude \
 	   -Iconfig/$(CONFIG)/binutils/include
 
-CFLAGS += $(INCLUDE) -fPIC -O2
+CFLAGS += $(INCLUDE) -fPIC -O2 -Wall -Wextra -Werror
 
 xtensa-config-$(CONFIG).so: $(SOURCE_FILES)
 	$(CC) -shared $(CFLAGS) $^ -o $@
