@@ -6,23 +6,16 @@ configured with the xtensa configuration overlay.
 
 Building:
 
-Install configuration overlay for the target xtensa core into the directory
-named config/<config-name> and run
+Fetch submodules
 
-  make CONFIG=<config-name>
+  git submodule update --init
+
+Run to build libraries for all available configurations
+
+  make lib
 
 in the current directory.
 
-Using:
-
-Set the environment variable XTENSA_GNU_CONFIG to the path of the
-configuration shared object:
-
-  $ export XTENSA_GNU_CONFIG=`pwd`/xtensa-config-<config-name>.so
-
-Run the compiler, assembler, linker, debugger or other binutils as usual.
-
-Dynamic configuration works both for cross and native toolchain.
 The following parts of the toolchain still need to be configured statically:
 - target gdbserver needs proper include/xtensa-config.h
   gdb/gdbserver/xtensa-config.c and gdb/gdbserver/xtensa-xtregs.c in the
@@ -37,3 +30,4 @@ the plugin code (including the xtensa configuration overlay) must be available
 under a GPL-compatible license. The people to whom you distribute the binary
 produced by GCC must be able to themselves build the plugin used to create
 the binary.
+

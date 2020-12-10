@@ -1,0 +1,15 @@
+image: $CI_DOCKER_REGISTRY/esp32-toolchain
+
+variables:
+  # GIT_STRATEGY - use an option in "CI / CD Settings" - "General pipelines"
+  GIT_SUBMODULE_STRATEGY: recursive
+
+all_config:
+  tags:
+    - build
+  artifacts:
+    paths:
+      - "*.so"
+    expire_in: 1 week
+  script:
+    - make all

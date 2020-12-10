@@ -24,7 +24,7 @@
 #include <stdlib.h>
 #define XTENSA_CONFIG_DEFINITION
 #include <xtensa-config.h>
-#include <xtensa-dynconfig.h>
+#include <xtensaconfig/dynconfig.h>
 
 #undef XTENSA_CONFIG_ENTRY
 #define XTENSA_CONFIG_ENTRY(a) a
