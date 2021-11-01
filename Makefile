@@ -25,6 +25,13 @@ xtensaconfig-%.so: $(LIB_SRCS)
 	@echo $(CFLAGS)
 	$(CC) $(LIB_FLAGS) $(LIB_INCLUDE) $^ -o $@
 
+clean:
+	rm -f *.so
+
+install: lib
+	mkdir -p $(DESTDIR)$(PREFIX)/lib
+	cp *.so $(DESTDIR)$(PREFIX)/lib
+
 #
 # Tests for the common code
 #

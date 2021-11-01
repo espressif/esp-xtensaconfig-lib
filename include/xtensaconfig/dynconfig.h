@@ -25,6 +25,9 @@
 extern "C" {
 #endif
 
+void xtensa_reset_config(void);
+const char **xtensa_get_config_strings (void);
+const char *xtensaconfig_get_option(void);
 const char *esp_log_proc(void);
 const char *esp_log_cmdline(void);
 void esp_log_write(int level, const char* format, ...) __attribute__ ((format (printf, 2, 3)));
