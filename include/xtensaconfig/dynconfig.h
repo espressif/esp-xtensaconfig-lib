@@ -99,7 +99,6 @@ struct xtensa_config {
     unsigned int xshal_abi;
     unsigned int xthal_abi_windowed;
     unsigned int xthal_abi_call0;
-    char xshal_core_name[32];
 };
 
 typedef struct xtensa_isa_internal_struct xtensa_isa_internal;
@@ -213,8 +212,7 @@ extern struct xtensa_config *xtensa_get_config (int opt_dbg);
     XTENSA_CONFIG_ENTRY(XCHAL_INST_FETCH_WIDTH), \
     XTENSA_CONFIG_ENTRY(XSHAL_ABI), \
     XTENSA_CONFIG_ENTRY(XTHAL_ABI_WINDOWED), \
-    XTENSA_CONFIG_ENTRY(XTHAL_ABI_CALL0), \
-    XTENSA_CONFIG_ENTRY(XSHAL_CORE_NAME)
+    XTENSA_CONFIG_ENTRY(XTHAL_ABI_CALL0)
 
 #define XTENSA_CONFIG_INITIALIZER { \
     sizeof (struct xtensa_config), \
@@ -387,8 +385,6 @@ extern struct xtensa_config *xtensa_get_config (int opt_dbg);
 #define XSHAL_ABI			(xtensa_get_config (51)->xshal_abi)
 #define XTHAL_ABI_WINDOWED		(xtensa_get_config (52)->xthal_abi_windowed)
 #define XTHAL_ABI_CALL0			(xtensa_get_config (53)->xthal_abi_call0)
-
-#define XSHAL_CORE_NAME			(xtensa_get_config (54)->xshal_core_name)
 
 #endif /* XTENSA_CONFIG_DEFINITION */
 
