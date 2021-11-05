@@ -156,6 +156,7 @@ const char *esp_log_cmdline(void)
 
 void esp_log_write(int level, const char* format, ...)
 {
+  static int printed_once = 0;
   int trace = 0;
   char *trace_str = getenv ("ESP_DEBUG_TRACE");
   if(trace_str)
@@ -168,10 +169,18 @@ void esp_log_write(int level, const char* format, ...)
     return;
   }
 
+  if (!printed_once)
+  {
+    fprintf(stderr, "Execution parameters:\nAPP: %s\nCMDLINE: %s\n\n", esp_log_proc(), esp_log_cmdline());
+    printed_once = 1;
+  }
+
   va_list list;
   va_start(list, format);
   vfprintf(stderr, format, list);
   va_end(list);
+
+  fflush(stderr);
 }
 
 
@@ -276,10 +285,11 @@ const void *xtensa_load_config (const char *symbol, void *dummy_data)
   // Load config from dynamic library
   if (!s_init)
   {
-    ESP_LOG_INFO("Use \'%s\' config for %s symbol", xtensaconfig_option, symbol);
     xtensa_load_shared_lib(&s_handle, xtensaconfig_option);
     s_init = 1;
   }
+
+  ESP_LOG_INFO("Use \'%s\' config for \"%s\" symbol", xtensaconfig_option, symbol);
 
   p = dlsym (s_handle, symbol);
   if (!p)

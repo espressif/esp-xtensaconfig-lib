@@ -31,9 +31,9 @@ const char *xtensaconfig_get_option(void);
 const char *esp_log_proc(void);
 const char *esp_log_cmdline(void);
 void esp_log_write(int level, const char* format, ...) __attribute__ ((format (printf, 2, 3)));
-#define ESP_LOG_FORMAT(format) "\t" format "\t //from %s() $ %s $ %s\n"
+#define ESP_LOG_FORMAT(format) "ESP_LOG %s:%d\t\t" format " \n"
 #define ESP_LOG_LEVEL(level, format, ...) do { \
-        esp_log_write(level, ESP_LOG_FORMAT(format), ##__VA_ARGS__, __func__, esp_log_proc(), esp_log_cmdline()); \
+        esp_log_write(level, ESP_LOG_FORMAT(format), __FUNCTION__, __LINE__, ##__VA_ARGS__); \
     } while(0)
 #define ESP_LOG_ERR(format, ...)      ESP_LOG_LEVEL(0, format, ##__VA_ARGS__)
 #define ESP_LOG_WARN(format, ...)     ESP_LOG_LEVEL(1, format, ##__VA_ARGS__)
