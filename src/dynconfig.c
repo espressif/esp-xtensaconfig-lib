@@ -1,4 +1,13 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "config.h"
+// Since we can not compare strings in preprocessor (PACKAGE == "gdb")
+// then check gdb unique macro
+#ifdef GDBINIT
+#include "xtensaconfig/gdb-config-fixup.h"
+#endif /* GDBINIT */
 
 #ifdef __linux__
 #include <linux/limits.h>
@@ -388,3 +397,7 @@ static int snprintf_or_abort(char *str, size_t size, const char *fmt, ...)
     }
     return res;
 }
+
+#ifdef __cplusplus
+} //extern "C"
+#endif
