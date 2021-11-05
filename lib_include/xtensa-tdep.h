@@ -1,6 +1,6 @@
 /* Target-dependent code for the Xtensa port of GDB, the GNU debugger.
 
-   Copyright (C) 2003-2016 Free Software Foundation, Inc.
+   Copyright (C) 2003-2021 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,7 +19,6 @@
 
 #ifndef XTENSA_TDEP_H
 #define XTENSA_TDEP_H
-
 
 #include "arch/xtensa.h"
 
@@ -106,7 +105,7 @@ typedef struct
 
 typedef struct 
 {
-  char* name;             	/* Register name.  */
+  const char *name;            	/* Register name.  */
   int offset;             	/* Offset.  */
   xtensa_register_type_t type;  /* Register type.  */
   xtensa_register_group_t group;/* Register group.  */
@@ -133,7 +132,7 @@ typedef struct
 	 ct, bsz, sz, al, tnum, flg, cp, mas, fet, sto},
 #define XTREG_END \
   {0, 0, (xtensa_register_type_t) 0, (xtensa_register_group_t) 0,	\
-   0, 0, 0, 0, -1, 0, 0, 0, 0, 0},
+   0, 0, 0, 0, (unsigned) -1, 0, 0, 0, 0, 0},
 
 #define XTENSA_REGISTER_FLAGS_PRIVILEGED	0x0001
 #define XTENSA_REGISTER_FLAGS_READABLE		0x0002
@@ -207,6 +206,7 @@ struct gdbarch_tdep
   int lcount_regnum;
   int sar_regnum;		/* Register number of SAR.  */
   int litbase_regnum;		/* Register number of LITBASE.  */
+  int threadptr_regnum;		/* Register number of THREADPTR.  */
 
   int interrupt_regnum;		/* Register number for interrupt.  */
   int interrupt2_regnum;	/* Register number for interrupt2.  */
@@ -230,7 +230,7 @@ struct gdbarch_tdep
 #define XTENSA_GDBARCH_TDEP_INSTANTIATE(rmap,spillsz)			\
   {									\
     0,				/* target_flags */			\
-    -1,				/* spill_location */			\
+    (unsigned) -1,		/* spill_location */	\
     (spillsz),			/* spill_size */			\
     0,				/* unused */				\
     (XSHAL_ABI == XTHAL_ABI_CALL0					\
@@ -275,7 +275,6 @@ struct gdbarch_tdep
     0,				 /* fp_layout */			\
     0,				 /* fp_layout_bytes */			\
     0,				 /* gregmap */				\
-    0,				 /* type_entries */ \
   }
 #define XTENSA_CONFIG_INSTANTIATE(rmap,spill_size)	\
 	struct gdbarch_tdep xtensa_tdep = \
