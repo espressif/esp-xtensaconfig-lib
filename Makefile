@@ -2,10 +2,13 @@
 # Libraries for configurations
 #
 
+TARGET_CHIPS = \
+	esp8266 \
+	esp32s2 \
+	esp32
+
 .PHONY: lib
-lib: xtensaconfig-esp8266.so \
-  xtensaconfig-esp32s2.so \
-  xtensaconfig-esp32.so
+lib: $(patsubst %,xtensaconfig-%.so,$(TARGET_CHIPS))
 
 RELEASE_FLAGS = -O2 -Wall -Wextra -Wpedantic -D_GNU_SOURCE
 
@@ -28,9 +31,33 @@ xtensaconfig-%.so: $(LIB_SRCS)
 clean:
 	rm -f *.so
 
+
+ifeq ($(PLATFORM),)
 install: lib
+else
+ifeq ($(PLATFORM),windows)
+install: lib gdb_exe_win
+else
+install: lib gdb_exe_unix
+endif
+endif
 	mkdir -p $(DESTDIR)$(PREFIX)/lib
 	cp *.so $(DESTDIR)$(PREFIX)/lib
+
+gdb_exe_unix:
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	for TARGET_CHIP in ${TARGET_CHIPS} ; do \
+		OUTPUT_FILE=$(DESTDIR)$(PREFIX)/bin/xtensa-$${TARGET_CHIP}-elf-gdb; \
+		sed 's/TARGET_CHIP/'$${TARGET_CHIP}'/g' bin_wrappers/$$PLATFORM > $$OUTPUT_FILE ; \
+		chmod +x $$OUTPUT_FILE; \
+	done
+
+gdb_exe_win:
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	for TARGET_CHIP in ${TARGET_CHIPS} ; do \
+		OUTPUT_FILE=$(DESTDIR)$(PREFIX)/bin/xtensa-$${TARGET_CHIP}-elf-gdb.exe; \
+		$(CC) bin_wrappers/$${PLATFORM}.c -o $$OUTPUT_FILE; \
+	done
 
 #
 # Tests for the common code
