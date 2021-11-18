@@ -1,13 +1,14 @@
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <stdint.h>
+#include <unistd.h>
+#include <libgen.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
 
-#include "config.h"
-// Since we can not compare strings in preprocessor (PACKAGE == "gdb")
-// then check gdb unique macro
-#ifdef GDBINIT
-#include "xtensaconfig/gdb-config-fixup.h"
-#endif /* GDBINIT */
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
 
 #ifdef __linux__
 #include <linux/limits.h>
@@ -15,28 +16,11 @@ extern "C" {
 #include <sys/syslimits.h>
 #include <crt_externs.h>
 #include <mach-o/dyld.h>
-#endif
-
-#include <stdint.h>
-#include <unistd.h>
-#include <libgen.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-#define _STRINGIFY(a) #a
-#define STRINGIFY(a) _STRINGIFY(a)
-
-#define XTENSA_CONFIG_DEFINITION
-#include "xtensa-config.h"
-#include "xtensaconfig/dynconfig.h"
-
-#if defined (HAVE_DLFCN_H)
-#include <dlfcn.h>
-#elif defined (_WIN32)
+#elif _WIN32
 #include <windows.h>
-#define ENABLE_PLUGIN
 #endif
+
+#include "xtensaconfig/dynconfig.h"
 
 #ifdef __linux__
 #define PROC_PATH_MAX 32
@@ -48,35 +32,38 @@ extern "C" {
   #define LIB_SUFFIX_DIR "\\..\\lib\\"
 #endif
 
-static struct xtensa_config s_dummy_config = XTENSA_CONFIG_INITIALIZER;
-
-#undef XTENSA_CONFIG_ENTRY
-#define XTENSA_CONFIG_ENTRY(a) "__" #a "=" STRINGIFY(a)
-
-static const char *s_dummy_strings[] = {
-    XTENSA_CONFIG_ENTRY_LIST,
-    NULL,
-};
+#define ESP_LOG_FORMAT(format) "ESP_LOG %s:%d\t\t" format " \n"
+#define ESP_LOG_LEVEL(level, format, ...) do { \
+        esp_log_write(level, ESP_LOG_FORMAT(format), __func__, __LINE__, ##__VA_ARGS__); \
+    } while(0)
+#define ESP_LOG_ERR(format, ...)      ESP_LOG_LEVEL(0, format, ##__VA_ARGS__)
+#define ESP_LOG_WARN(format, ...)     ESP_LOG_LEVEL(1, format, ##__VA_ARGS__)
+#define ESP_LOG_INFO(format, ...)     ESP_LOG_LEVEL(2, format, ##__VA_ARGS__)
+#define ESP_LOG_DBG(format, ...)      ESP_LOG_LEVEL(3, format, ##__VA_ARGS__)
+#define ESP_LOG_TRACE(format, ...)    ESP_LOG_LEVEL(4, format, ##__VA_ARGS__)
+// Print even if esp_log_level hasn't initialized yet
+#define ESP_LOG_ANYWAY(format, ...)   ESP_LOG_LEVEL(0, format, ##__VA_ARGS__)
 
 static int snprintf_or_abort(char *str, size_t size, const char *fmt, ...);
 static void get_library_directory(char *libdir, size_t libdir_size);
 static void get_path_to_executable(char *path, size_t path_size);
 static void xtensa_load_shared_lib(void **s_handle, const char *xtensaconfig_option);
 
-static struct xtensa_config *dynconfig = NULL;
+static const char *esp_log_proc(void);
+static const char *esp_log_cmdline(void);
+static void esp_log_write(int level, const char* format, ...) __attribute__ ((format (printf, 2, 3)));
+
+static struct xtensa_config *s_dynconfig = NULL;
+extern const struct xtensa_config xtensa_default_config;
 
 void xtensa_reset_config(void)
 {
-  dynconfig = NULL;
+  s_dynconfig = NULL;
+  ESP_LOG_TRACE("Reset dynconfig");
 }
 
-//TODO just for researching, when we don't have the ENABLE_PLUGIN define
-//#if !defined(ENABLE_PLUGIN) && !defined(BFD_SUPPORTS_PLUGINS)
-//#error "ENABLE_PLUGIN is not defined"
-//#endif
-
 // Logging
-const char *esp_log_proc(void)
+static const char *esp_log_proc(void)
 {
   static char s_path[PATH_MAX] = {0};
 
@@ -88,7 +75,7 @@ const char *esp_log_proc(void)
   return s_path;
 }
 
-const char *esp_log_cmdline(void)
+static const char *esp_log_cmdline(void)
 {
   static char s_cmdline[PATH_MAX * 4] = {0};
 
@@ -107,7 +94,7 @@ const char *esp_log_cmdline(void)
   fp = fopen(proc_path, "r");
   if(fp == NULL)
   {
-    perror("fopen()");
+    fprintf(stderr, "can't open process cmdline (\"%s\")\n", proc_path);
     abort();
   }
 
@@ -130,7 +117,7 @@ const char *esp_log_cmdline(void)
   char *tmp = GetCommandLineA();
   if (tmp == NULL)
   {
-    perror("GetCommandLineA()");
+    fprintf(stderr, "can't get process command line (\"%s\")\n", strerror(errno));
     abort();
   }
 
@@ -163,7 +150,7 @@ const char *esp_log_cmdline(void)
   return s_cmdline;
 }
 
-void esp_log_write(int level, const char* format, ...)
+static void esp_log_write(int level, const char* format, ...)
 {
   static int printed_once = 0;
   int trace = 0;
@@ -248,30 +235,27 @@ static const char *dlerror (void)
 
 #endif /* !defined (HAVE_DLFCN_H) && defined (_WIN32)  */
 
-static void xtensa_load_shared_lib(void **s_handle, const char *xtensaconfig_option)
+static void xtensa_load_shared_lib(void **handle, const char *xtensaconfig_option)
 {
   size_t curr_size = 0;
-  char s_lib_file [PATH_MAX] = {0};
+  char lib_file [PATH_MAX] = {0};
 
-  get_library_directory(s_lib_file, PATH_MAX);
-  curr_size = strlen(s_lib_file);
-  snprintf_or_abort(&s_lib_file[curr_size], PATH_MAX - curr_size, "xtensaconfig-%s.so", xtensaconfig_option);
-  *s_handle = dlopen (s_lib_file, RTLD_NOW);
+  get_library_directory(lib_file, PATH_MAX);
+  curr_size = strlen(lib_file);
+  snprintf_or_abort(&lib_file[curr_size], PATH_MAX - curr_size, "xtensaconfig-%s.so", xtensaconfig_option);
+  *handle = dlopen (lib_file, RTLD_NOW);
 
-  if (!(*s_handle))
+  if (!(*handle))
   {
-    ESP_LOG_ERR("Lib \"%s\" cannot be loaded: %s", s_lib_file, dlerror());
+    ESP_LOG_ERR("Lib \"%s\" cannot be loaded: %s", lib_file, dlerror());
     abort ();
   }
-  ESP_LOG_INFO("Lib \"%s\" loaded", s_lib_file);
+  ESP_LOG_INFO("Lib \"%s\" loaded", lib_file);
 }
 
 const void *xtensa_load_config (const char *symbol, void *dummy_data)
 {
-  // If initialized, it means that:
-  //    s_handle - was loaded correctly,
-  static int s_init = 0;
-  static void *s_handle = 0;
+  static void *s_handle = NULL;
   const char *xtensaconfig_option = xtensaconfig_get_option();
   const void *p = NULL;
 
@@ -292,10 +276,9 @@ const void *xtensa_load_config (const char *symbol, void *dummy_data)
   }
 
   // Load config from dynamic library
-  if (!s_init)
+  if (s_handle == NULL)
   {
     xtensa_load_shared_lib(&s_handle, xtensaconfig_option);
-    s_init = 1;
   }
 
   ESP_LOG_INFO("Use \'%s\' config for \"%s\" symbol", xtensaconfig_option, symbol);
@@ -313,20 +296,23 @@ const void *xtensa_load_config (const char *symbol, void *dummy_data)
 struct xtensa_config *xtensa_get_config (int opt_dbg)
 {
   ESP_LOG_TRACE("DYN: %s, OPT: %3d", xtensaconfig_get_option(), opt_dbg);
-  if (dynconfig)
+  if (s_dynconfig)
   {
-    return dynconfig;
+    ESP_LOG_TRACE("DYN: s_dynconfig->xchal_have_be %u", s_dynconfig->xchal_have_be);
+    return s_dynconfig;
   }
 
-  dynconfig = (struct xtensa_config *) xtensa_load_config ("xtensa_config", &s_dummy_config);
-  if (dynconfig->config_size < sizeof(struct xtensa_config))
+  s_dynconfig = (struct xtensa_config *) xtensa_load_config ("xtensa_config", &xtensa_default_config);
+  ESP_LOG_TRACE("Setup %s xtensa_config", (&xtensa_default_config == s_dynconfig) ? "default" : "custom");
+
+  if (s_dynconfig->config_size < sizeof(struct xtensa_config))
   {
     ESP_LOG_ERR("Old or incompatible configuration is loaded: config_size = %lu, expected: %u",
-      dynconfig->config_size, (uint32_t) sizeof (struct xtensa_config));
+      s_dynconfig->config_size, (uint32_t) sizeof (struct xtensa_config));
     abort ();
   }
 
-  return dynconfig;
+  return s_dynconfig;
 }
 
 static void get_library_directory(char *libdir, size_t libdir_size)
@@ -359,7 +345,7 @@ static void get_path_to_executable(char *path, size_t path_size) {
   written = readlink(proc_path, path, path_size);
   if(written < 1)
   {
-      perror("readlink()");
+      fprintf(stderr, "can't open process exe (\"%s\")\n", proc_path);
       abort();
   }
   if((size_t)written >= path_size)
@@ -370,13 +356,13 @@ static void get_path_to_executable(char *path, size_t path_size) {
 #elif _WIN32
   if (GetModuleFileName(0, path, path_size) == 0)
   {
-      perror("GetModuleFileName()");
+      fprintf(stderr, "can't get process's exec path (\"%s\")\n", strerror(errno));
       abort();
   }
 #elif __APPLE__
   if (_NSGetExecutablePath(path, (uint32_t*) &path_size) != 0)
   {
-    perror("_NSGetExecutablePath()");
+    fprintf(stderr, "can't get process's exec path (\"%s\")\n", strerror(errno));
     abort();
   }
 #endif // __linux__
@@ -397,7 +383,3 @@ static int snprintf_or_abort(char *str, size_t size, const char *fmt, ...)
     }
     return res;
 }
-
-#ifdef __cplusplus
-} //extern "C"
-#endif

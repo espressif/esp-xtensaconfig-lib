@@ -3,13 +3,14 @@ image: $CI_DOCKER_REGISTRY/esp32-toolchain
 variables:
   # GIT_STRATEGY - use an option in "CI / CD Settings" - "General pipelines"
   GIT_SUBMODULE_STRATEGY: recursive
+  DESTDIR: ${CI_PROJECT_DIR}/dist
 
-all_config:
-  tags:
-    - build
+x86_64-linux-gnu:
+  tags: [ "build", "amd64" ]
   artifacts:
     paths:
-      - "*.so"
+      - ${DESTDIR}
+      - "*.a"
     expire_in: 1 week
   script:
-    - make all
+    - make install DESTDIR=${DESTDIR} PLATFORM=linux

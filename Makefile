@@ -7,8 +7,20 @@ TARGET_CHIPS = \
 	esp32s2 \
 	esp32
 
+CC ?= gcc
+AR ?= ar
+
+OBJ_DIR=./obj
+
+LIBCONFIG-GDB_SOURCES = \
+         src/dynconfig.c \
+         src/option_gdb.c
+
+LIBCONFIG-DEFAULT_SOURCES = \
+         lib_config/xtensa-config.c
+
 .PHONY: lib
-lib: $(patsubst %,xtensaconfig-%.so,$(TARGET_CHIPS))
+lib: libxtensaconfig-default.a libxtensaconfig-gdb.a $(patsubst %,xtensaconfig-%.so,$(TARGET_CHIPS))
 
 RELEASE_FLAGS = -O2 -Wall -Wextra -Wpedantic -D_GNU_SOURCE
 
@@ -17,10 +29,24 @@ LIB_SRCS = lib_src/xtensa-config.c \
 	       config/xtensa_%/gdb/gdb/xtensa-config.c \
 	       config/xtensa_%/gdb/gdb/xtensa-xtregs.c
 
-LIB_INCLUDE = -Ilib_include -Iinclude \
-	   -Iconfig/xtensa_$*/binutils/include
+COMMON_INCLUDE = -Ilib_include -Iinclude
+
+# Include chip depended directory first
+LIB_INCLUDE = -Iconfig/xtensa_$*/binutils/include ${COMMON_INCLUDE}
 
 LIB_FLAGS = -shared -fPIC $(RELEASE_FLAGS) $(CFLAGS)
+
+libxtensaconfig-default.a: $(patsubst %.c,$(OBJ_DIR)/%.o,$(LIBCONFIG-DEFAULT_SOURCES))
+	$(AR) rcs $@ $^
+
+libxtensaconfig-gdb.a: $(patsubst %.c,$(OBJ_DIR)/%.o,$(LIBCONFIG-GDB_SOURCES))
+	$(AR) rcs $@ $^
+
+$(OBJ_DIR)/%.o: %.c dirmake
+	$(CC) -c $(RELEASE_FLAGS) $(CFLAGS) $(COMMON_INCLUDE) -o $@  $<
+
+dirmake:
+	@mkdir -p $(OBJ_DIR)/src $(OBJ_DIR)/lib_config
 
 xtensaconfig-%.so: $(LIB_SRCS)
 	@echo $@
@@ -29,7 +55,7 @@ xtensaconfig-%.so: $(LIB_SRCS)
 	$(CC) $(LIB_FLAGS) $(LIB_INCLUDE) $^ -o $@
 
 clean:
-	rm -f *.so
+	rm -fr *.so *.a $(OBJ_DIR)
 
 
 ifeq ($(PLATFORM),)
@@ -58,59 +84,3 @@ gdb_exe_win:
 		OUTPUT_FILE=$(DESTDIR)$(PREFIX)/bin/xtensa-$${TARGET_CHIP}-elf-gdb.exe; \
 		$(CC) bin_wrappers/$${PLATFORM}.c -o $$OUTPUT_FILE; \
 	done
-
-#
-# Tests for the common code
-#
-# See: https://www.throwtheswitch.org/build/make
-
-COMMON_PATH = src/
-UNITY_PATH = test/Unity-2.4.3/
-TEST_PATH = test/src/
-BUILD_PATH = test/build/
-
-COMMON_SRCS = $(wildcard $(COMMON_PATH)*.c)
-COMMON_OBJS = $(patsubst $(COMMON_PATH)%.c,$(BUILD_PATH)%.o,$(COMMON_SRCS) )
-
-TEST_COMMON_SRC = $(TEST_PATH)test_main.c
-TEST_RESULT = $(patsubst $(TEST_PATH)%.c,$(BUILD_PATH)%.txt,$(TEST_COMMON_SRC) )
-TEST_BINARY = $(patsubst $(TEST_PATH)%.c,$(BUILD_PATH)%.out,$(TEST_COMMON_SRC) )
-
-PASSED = `grep -s PASS $(BUILD_PATH)*.txt`
-FAIL = `grep -s FAIL $(BUILD_PATH)*.txt`
-IGNORE = `grep -s IGNORE $(BUILD_PATH)*.txt`
-
-TEST_CFLAGS = $(RELEASE_FLAGS) $(CFLAGS) -I$(UNITY_PATH) -T$(TEST_PATH) \
-	-DUTEST -DTEST_BINDIR="$(shell readlink -f $(BUILD_PATH))"
-
-.PHONY: test
-test: $(BUILD_PATH) $(TEST_RESULT)
-	@echo -e "-----------------------\nIGNORES:\n-----------------------"
-	@echo -e "$(IGNORE)"
-	@echo -e "-----------------------\nFAILURES:\n-----------------------"
-	@echo -e "$(FAIL)"
-	@echo -e "-----------------------\nPASSED:\n-----------------------"
-	@echo -e "$(PASSED)"
-	@echo -e "\nDONE"
-
-$(BUILD_PATH)%.txt: $(BUILD_PATH)%.out
-	-./$< > $@ 2>&1
-
-$(BUILD_PATH)%.out: $(BUILD_PATH)%.o $(COMMON_OBJS) $(BUILD_PATH)unity.o
-	$(CC) -o $@ $^
-
-$(BUILD_PATH)%.o:: $(TEST_PATH)%.c
-	$(CC) -c $(TEST_CFLAGS) $< -o $@
-
-$(BUILD_PATH)%.o:: $(COMMON_PATH)%.c
-	$(CC) -c $(TEST_CFLAGS) $< -o $@
-
-$(BUILD_PATH)%.o:: $(UNITY_PATH)%.c $(UNITY_PATH)%.h
-	$(CC) -c $(TEST_CFLAGS) $< -o $@
-
-$(BUILD_PATH):
-	mkdir -p $(BUILD_PATH)
-
-.PRECIOUS: $(BUILD_PATH)%.out
-.PRECIOUS: $(BUILD_PATH)%.o
-.PRECIOUS: $(BUILD_PATH)%.txt

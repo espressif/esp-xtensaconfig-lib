@@ -33,20 +33,18 @@ int main (int argc, char **argv) {
   cmdline = get_cmdline(argc, (const char **) argv, exe_path, mcpu_option);
   execute_cmdline(cmdline);
 
-  if (cmdline) {
-    free(cmdline);
-  }
+  free(cmdline);
   return 0;
 }
 
 static char *get_filename_ptr(const char *exe_path) {
   char *filename = strrchr(exe_path, '\\');
   if(filename == NULL) {
-    fprintf(stderr, "Wrong path, can't extract filename");
+    fprintf(stderr, "Wrong path, can't extract filename (\"%s\")", exe_path);
     abort();
   }
 
-  if (strlen(filename) < strlen(GDB_BASE_FILENAME)) {
+  if (strlen(filename) - 1 < strlen(GDB_BASE_FILENAME)) {
     fprintf(stderr, "Filename is too short. Expected \"%s\"", GDB_FILENAME_EXAMPLE);
     abort();
   }
@@ -55,7 +53,7 @@ static char *get_filename_ptr(const char *exe_path) {
 }
 
 static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_size) {
-  char *mcpu_start = strchr(filename, '-');;
+  char *mcpu_start = strchr(filename, '-');
   char *mcpu_end = strchr(&filename[strlen(GDB_FILENAME_PREFIX)], '-');
   size_t len_to_write = 0;
 
