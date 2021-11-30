@@ -9,32 +9,75 @@
 #define GDB_BASE_FILENAME "xtensa-" MCPU_BASE "-elf-gdb.exe"
 #define GDB_FILENAME_EXAMPLE "xtensa-" MCPU_BASE "XXX-elf-gdb.exe"
 
+#define PYTHON_VERSION_BUFFER_SIZE 32
+#define PYTHON_SCRIPT_CMD_OPTION " -c "
+#define PYTHON_SCRIPT_GET_VERSION "\"import sys; print(\\\"{}.{}\\\".format(sys.version_info.major, sys.version_info.minor))\""
+#define REDIRECT_STDERR_TO_NULL " 2>nul"
+#define PYTHON_MAJOR_WITH_DOT "3."
+
+static char * getModuleFileName(size_t append_memory_size);
 static char *get_filename_ptr(const char *exe_path);
 static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_size);
-static void change_exec_path_filename(char *filename, const char * mcpu_option);
+static char *get_exe_path_and_mcpu_option(char *mcpu_option, const size_t mcpu_option_size);
 static char *get_cmdline(const int argc, const char **argv, const char *exe_path, const char * mcpu_option);
+static char *get_python_version(void);
 static void execute_cmdline(const char *cmdline);
 
+const char *python_exe_arr[] = {"python", "python3"};
+
 int main (int argc, char **argv) {
-  char exe_path[PATH_MAX] = {0};
-  char mcpu_option[MCPU_MAX_LEN] = {0};
-  char *filename = NULL;
   char *cmdline = NULL;
+  char *exe_path = NULL;
+  char mcpu_option[MCPU_MAX_LEN] = {0};
 
-  if (GetModuleFileName(0, exe_path, PATH_MAX) == 0)
-  {
-      perror("GetModuleFileName()");
-      abort();
-  }
-
-  filename = get_filename_ptr(exe_path);
-  set_mcpu_option(filename, mcpu_option, sizeof(mcpu_option));
-  change_exec_path_filename(filename, mcpu_option);
+  exe_path = get_exe_path_and_mcpu_option(mcpu_option, sizeof(mcpu_option));
   cmdline = get_cmdline(argc, (const char **) argv, exe_path, mcpu_option);
   execute_cmdline(cmdline);
 
+  free(exe_path);
   free(cmdline);
   return 0;
+}
+
+static char * getModuleFileName(size_t append_memory_size) {
+  LPTSTR exe_path;
+  DWORD exe_path_size;
+  DWORD res;
+
+  exe_path_size = PATH_MAX;
+  exe_path = malloc(exe_path_size);
+  if (exe_path == NULL) {
+    perror("malloc()");
+    abort();
+  }
+
+  // For some reasons it could be a path greater than PATH_MAX,
+  // so allocate more memory until it fits to the buffer
+  while ((res = GetModuleFileName(0, exe_path, exe_path_size)) &&
+       (GetLastError() == ERROR_INSUFFICIENT_BUFFER)) {
+      exe_path_size *= 2;
+      exe_path = realloc(exe_path, exe_path_size);
+      if (exe_path == NULL) {
+         perror("realloc()");
+         abort();
+      }
+  }
+
+  if (!res) {
+    perror("GetModuleFileName()");
+    abort();
+  }
+
+  // resize buffer if need for future usage
+  if (exe_path_size < strlen(exe_path) + append_memory_size + 1) {
+    exe_path_size = strlen(exe_path) + append_memory_size + 1;
+    exe_path = realloc(exe_path, exe_path_size);
+    if (exe_path == NULL) {
+      perror("realloc()");
+      abort();
+    }
+  }
+  return exe_path;
 }
 
 static char *get_filename_ptr(const char *exe_path) {
@@ -52,7 +95,7 @@ static char *get_filename_ptr(const char *exe_path) {
   return filename++;
 }
 
-static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_size) {
+static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_option_size) {
   char *mcpu_start = strchr(filename, '-');
   char *mcpu_end = strchr(&filename[strlen(GDB_FILENAME_PREFIX)], '-');
   size_t len_to_write = 0;
@@ -64,7 +107,7 @@ static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_
   mcpu_start++;
 
   len_to_write = mcpu_end - mcpu_start + strlen(MCPU_PREFIX);
-  if (mcpu_size < len_to_write) {
+  if (mcpu_option_size < len_to_write) {
     fprintf(stderr, "insufficient buffer size\n");
     abort();
   }
@@ -73,20 +116,51 @@ static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_
   return;
 }
 
-// Expecting that filename length is grater than filename which we are going to
-// execute, because original gdb name is like "xtensa-esp-elf-gdb.exe" but
-// we have "xtensa-espWHATEVER-elf-gdb.exe"
-static void change_exec_path_filename(char *filename, const char const * mcpu_option) {
-  size_t chars_to_remove = strlen(mcpu_option) - strlen(MCPU_PREFIX) - strlen(MCPU_BASE);
-  char *start = filename + strlen(GDB_FILENAME_PREFIX) + 1;
-  size_t chars_to_move = strlen(start) - chars_to_remove + 1;
+static char * get_exe_path_and_mcpu_option(char *mcpu_option, const size_t mcpu_option_size) {
+  char *exe_path;
+  char *filename = NULL;
+  char *python_version = NULL;
+  size_t chars_to_remove = 0;
+  char *start = NULL;
+  size_t chars_to_move = 0;
+
+  python_version = get_python_version();
+  exe_path = getModuleFileName(strlen(python_version));
+  filename = get_filename_ptr(exe_path);
+  set_mcpu_option(filename, mcpu_option, mcpu_option_size);
+
+  // Remove esp mcpu
+  chars_to_remove = strlen(mcpu_option) - strlen(MCPU_PREFIX) - strlen(MCPU_BASE);
+  start = filename + strlen(GDB_FILENAME_PREFIX) + 1;
+  chars_to_move = strlen(start) - chars_to_remove + 1;
   memmove(start, start + chars_to_remove, chars_to_move);
+
+  // Add python version postfix if exists
+  if (strlen(python_version) == 0) {
+    // Notify user he/she is using GDB without python support
+    printf("Without python\r\n");
+    fflush(stdout);
+    return exe_path;
+  }
+
+  // insert python_version to the filename
+  // don't worry about buffer overflow, additionall memory for python version
+  // was allocated in getModuleFileName()
+  start = strrchr(filename, '.');
+  chars_to_move = strlen(python_version) + 1;
+  memmove(start + chars_to_move, start, strlen(filename) - strlen(start) + 1);
+  snprintf(start, chars_to_move, "-%s", python_version);
+
+  // Notify user he/she is using GDB with python support
+  printf("With python-%s\r\n", python_version);
+  fflush(stdout);
+  return exe_path;
 }
 
 static char *get_cmdline(const int argc, const char **argv, const char *exe_path, const char * mcpu_option) {
-  char * cmdline = calloc(1, strlen(exe_path) + strlen(mcpu_option) + 2);
+  char * cmdline = (char *)malloc(strlen(exe_path) + strlen(mcpu_option) + 2);
   if (cmdline == NULL) {
-    perror("calloc");
+    perror("malloc");
     abort();
   }
   sprintf(cmdline, "%s %s", exe_path, mcpu_option);
@@ -101,6 +175,49 @@ static char *get_cmdline(const int argc, const char **argv, const char *exe_path
     sprintf(&cmdline[cur_len], " %s", argv[i]);
   }
   return cmdline;
+}
+
+static char *get_python_version(void) {
+  static char python_version[PYTHON_VERSION_BUFFER_SIZE] = {0};
+  char *tmp = NULL;
+  const size_t python_exe_arr_size = sizeof(python_exe_arr) / sizeof(python_exe_arr[0]);
+  size_t i = 0;
+  for (i = 0; i < python_exe_arr_size; i++) {
+    FILE* pipe = NULL;
+    char *python_cmd = malloc(strlen(python_exe_arr[i]) +
+                              strlen(PYTHON_SCRIPT_CMD_OPTION) +
+                              strlen(PYTHON_SCRIPT_GET_VERSION) +
+                              strlen(REDIRECT_STDERR_TO_NULL) +
+                              1);
+    sprintf(python_cmd, "%s%s%s%s", python_exe_arr[i],
+                                    PYTHON_SCRIPT_CMD_OPTION,
+                                    PYTHON_SCRIPT_GET_VERSION,
+                                    REDIRECT_STDERR_TO_NULL);
+
+    pipe = popen(python_cmd, "r");
+    if (pipe == NULL) {
+      free(python_cmd);
+      continue;
+    }
+
+    fgets(python_version, sizeof(python_version), pipe);
+    pclose(pipe);
+    free(python_cmd);
+
+    if (strncmp(python_version, PYTHON_MAJOR_WITH_DOT, strlen(PYTHON_MAJOR_WITH_DOT)) == 0) {
+      break;
+    } else {
+      python_version[0] = 0;
+    }
+  }
+
+  // find newline character and override it with \0
+  tmp = strchr(python_version, '\n');
+  if (tmp != NULL) {
+    *tmp = '\0';
+  }
+
+  return python_version;
 }
 
 static void execute_cmdline(const char *cmdline) {

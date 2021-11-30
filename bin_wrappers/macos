@@ -1,2 +1,10 @@
 #!/usr/bin/env bash
-"$(cd "$(dirname "$0")"; pwd)/xtensa-esp-elf-gdb" --mcpu=TARGET_CHIP "$@"
+# Check if python have dynamic library. If not - use gdb without-python
+GDB_WRAPPER_PYTHON_VERSION=-$(python3 -c 'import sys; import sysconfig; print("{}.{}".format(sys.version_info.major, sys.version_info.minor)) if sysconfig.get_config_vars("INSTSONAME")[0].split(".")[-1] != "a" else exit(1)' 2> /dev/null)
+if [ $? == 0 ]; then
+	echo "With python${GDB_WRAPPER_PYTHON_VERSION}"
+else
+	GDB_WRAPPER_PYTHON_VERSION=""
+	echo "Without python"
+fi
+"$(cd "$(dirname "$0")"; pwd)/xtensa-esp-elf-gdb${GDB_WRAPPER_PYTHON_VERSION}" --mcpu=TARGET_CHIP "$@"
