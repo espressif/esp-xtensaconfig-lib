@@ -27,9 +27,9 @@
 #endif
 
 #ifndef _WIN32
-  #define LIB_SUFFIX_DIR "/../lib/"
+  #define LIB_SUFFIX_DIR "/lib/"
 #else
-  #define LIB_SUFFIX_DIR "\\..\\lib\\"
+  #define LIB_SUFFIX_DIR "\\lib\\"
 #endif
 
 #define ESP_LOG_FORMAT(format) "ESP_LOG %s:%d\t\t" format " \n"
@@ -52,6 +52,9 @@ static void xtensa_load_shared_lib(void **s_handle, const char *xtensaconfig_opt
 static const char *esp_log_proc(void);
 static const char *esp_log_cmdline(void);
 static void esp_log_write(int level, const char* format, ...) __attribute__ ((format (printf, 2, 3)));
+#ifdef __APPLE__
+static char *apple_dirname(char *path);
+#endif
 
 static struct xtensa_config *s_dynconfig = NULL;
 extern const struct xtensa_config xtensa_default_config;
@@ -315,25 +318,40 @@ struct xtensa_config *xtensa_get_config (int opt_dbg)
   return s_dynconfig;
 }
 
+#ifdef __APPLE__
+static char *apple_dirname(char *path)
+{
+  // The dirname() function returns a pointer to internal static storage space
+  // that will be overwritten by subsequent calls (each function has its own
+  // separate storage).
+  char *dir = dirname(path);
+  if (dir == NULL)
+  {
+    fprintf(stderr, "can't get process's (\"%s\") dirname (\"%s\")\n", path, strerror(errno));
+    abort();
+  }
+  return dir;
+}
+#endif
+
 static void get_library_directory(char *libdir, size_t libdir_size)
 {
-    char *tmp = NULL;
-    char *dname = NULL;
+    size_t libdir_len = 0;
 
     get_path_to_executable(libdir, libdir_size);
 
-    // an executable file directory
-    tmp = strdup((const char *)libdir);
-    if (tmp == NULL)
-    {
-        fprintf(stderr, "strdup failed\n");
-        abort();
-    }
-
-    dname = dirname(tmp);
-    // append with "/../lib/" for linux; "\..\lib\" for win
-    snprintf_or_abort(libdir, libdir_size, "%s%s", dname, LIB_SUFFIX_DIR);
-    free(tmp);
+    // NOTE: we assume that the executable located in /.../binutils-gdb-root-dir/bin
+    //               and the libraries are located in /.../binutils-gdb-root-dir/lib
+    // get /.../binutils-gdb-root-dir
+#ifdef __APPLE__
+    char *subdir = apple_dirname(apple_dirname(libdir));
+    snprintf_or_abort(libdir, libdir_size, "%s", subdir);
+#else
+    libdir = dirname(dirname(libdir));
+#endif
+    libdir_len = strlen(libdir);
+    // append with "/lib/" for linux; "\lib\" for win
+    snprintf_or_abort(&libdir[libdir_len], libdir_size - libdir_len, "%s", LIB_SUFFIX_DIR);
 }
 
 static void get_path_to_executable(char *path, size_t path_size) {
