@@ -34,7 +34,7 @@ COMMON_INCLUDE = -Ilib_include -Iinclude
 # Include chip depended directory first
 LIB_INCLUDE = -Iconfig/xtensa_$*/binutils/include ${COMMON_INCLUDE}
 
-LIB_FLAGS = -shared -fPIC $(RELEASE_FLAGS) $(CFLAGS)
+LIB_FLAGS = -nostdlib -shared -fPIC $(RELEASE_FLAGS) $(CFLAGS)
 
 libxtensaconfig-default.a: $(patsubst %.c,$(OBJ_DIR)/%.o,$(LIBCONFIG-DEFAULT_SOURCES))
 	$(AR) rcs $@ $^
