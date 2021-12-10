@@ -136,23 +136,32 @@ static char * get_exe_path_and_mcpu_option(char *mcpu_option, const size_t mcpu_
   memmove(start, start + chars_to_remove, chars_to_move);
 
   // Add python version postfix if exists
-  if (strlen(python_version) == 0) {
+  if (strlen(python_version) != 0) {
+    char *exe_path_wo_python = strdup(exe_path);
+    if (exe_path_wo_python == NULL) {
+      perror("strdup()");
+      abort();
+    }
+
+    // insert python_version to the filename
+    // don't worry about buffer overflow, additionall memory for python version
+    // was allocated in getModuleFileName()
+    start = strrchr(filename, '.');
+    chars_to_move = strlen(python_version) + 1;
+    memmove(start + chars_to_move, start, strlen(filename) - strlen(start) + 1);
+    snprintf(start, chars_to_move, "-%s", python_version);
+
+    if(GetFileAttributesA(exe_path) == INVALID_FILE_ATTRIBUTES) { // no exe file for this python version
+      printf("Python-%s is not supported. Run without python\r\n", python_version);
+      strcpy(exe_path, exe_path_wo_python);
+    } else {
+      printf("Run with python-%s\r\n", python_version);
+    }
+    free(exe_path_wo_python);
+  } else {
     // Notify user he/she is using GDB without python support
-    printf("Without python\r\n");
-    fflush(stdout);
-    return exe_path;
+    printf("Run without python\r\n");
   }
-
-  // insert python_version to the filename
-  // don't worry about buffer overflow, additionall memory for python version
-  // was allocated in getModuleFileName()
-  start = strrchr(filename, '.');
-  chars_to_move = strlen(python_version) + 1;
-  memmove(start + chars_to_move, start, strlen(filename) - strlen(start) + 1);
-  snprintf(start, chars_to_move, "-%s", python_version);
-
-  // Notify user he/she is using GDB with python support
-  printf("With python-%s\r\n", python_version);
   fflush(stdout);
   return exe_path;
 }
