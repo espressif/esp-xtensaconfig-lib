@@ -2,13 +2,23 @@
 # Libraries for configurations
 #
 
-TARGET_CHIPS = \
+TARGET_ESP_CHIPS = \
 	esp8266 \
 	esp32s2 \
 	esp32
+TARGET_ESP_ARCH ?= xtensa
 
 CC ?= gcc
 AR ?= ar
+
+ifeq ($(TARGET_ESP_ARCH), xtensa)
+TARGET_ESP_ARCH_NUM = 0
+lib: libxtensaconfig-default.a libxtensaconfig-gdb.a $(patsubst %,xtensaconfig-%.so,$(TARGET_ESP_CHIPS))
+else
+TARGET_ESP_ARCH_NUM = 1
+TARGET_ESP_CHIPS = esp
+lib:
+endif
 
 OBJ_DIR=./obj
 
@@ -20,7 +30,6 @@ LIBCONFIG-DEFAULT_SOURCES = \
          lib_config/xtensa-config.c
 
 .PHONY: lib
-lib: libxtensaconfig-default.a libxtensaconfig-gdb.a $(patsubst %,xtensaconfig-%.so,$(TARGET_CHIPS))
 
 RELEASE_FLAGS = -O2 -Wall -Wextra -Wpedantic -D_GNU_SOURCE
 
@@ -48,6 +57,9 @@ $(OBJ_DIR)/%.o: %.c dirmake
 dirmake:
 	@mkdir -p $(OBJ_DIR)/src $(OBJ_DIR)/lib_config
 
+xtensaconfig-esp.so:
+	@echo dummy
+
 xtensaconfig-%.so: $(LIB_SRCS)
 	@echo $@
 	@echo $^
@@ -67,20 +79,26 @@ else
 install: lib gdb_exe_unix
 endif
 endif
+ifeq ($(TARGET_ESP_ARCH), xtensa)
 	mkdir -p $(DESTDIR)$(PREFIX)/lib
-	cp *.so $(DESTDIR)$(PREFIX)/lib
+	cp -f *.so $(DESTDIR)$(PREFIX)/lib
+endif
 
 gdb_exe_unix:
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	for TARGET_CHIP in ${TARGET_CHIPS} ; do \
-		OUTPUT_FILE=$(DESTDIR)$(PREFIX)/bin/xtensa-$${TARGET_CHIP}-elf-gdb; \
-		sed 's/TARGET_CHIP/'$${TARGET_CHIP}'/g' bin_wrappers/$$PLATFORM > $$OUTPUT_FILE ; \
+	for TARGET_ESP_CHIP in ${TARGET_ESP_CHIPS} ; do \
+		OUTPUT_FILE=$(DESTDIR)$(PREFIX)/bin/$${TARGET_ESP_ARCH}-$${TARGET_ESP_CHIP}-elf-gdb; \
+		if [ ${TARGET_ESP_ARCH} == "xtensa" ]; then \
+			sed -e 's/TARGET_ESP_MCPU_OPTION/--mcpu='$${TARGET_ESP_CHIP}'/g' -e 's/TARGET_ESP_ARCH/'$${TARGET_ESP_ARCH}'/g' bin_wrappers/$$PLATFORM > $$OUTPUT_FILE ; \
+		else \
+			sed -e 's/TARGET_ESP_MCPU_OPTION//g' -e 's/TARGET_ESP_ARCH/'$${TARGET_ESP_ARCH}'/g' bin_wrappers/$$PLATFORM > $$OUTPUT_FILE ; \
+		fi; \
 		chmod +x $$OUTPUT_FILE; \
 	done
 
 gdb_exe_win:
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	for TARGET_CHIP in ${TARGET_CHIPS} ; do \
-		OUTPUT_FILE=$(DESTDIR)$(PREFIX)/bin/xtensa-$${TARGET_CHIP}-elf-gdb.exe; \
-		$(CC) bin_wrappers/$${PLATFORM}.c -o $$OUTPUT_FILE; \
+	for TARGET_ESP_CHIP in ${TARGET_ESP_CHIPS} ; do \
+		OUTPUT_FILE=$(DESTDIR)$(PREFIX)/bin/$${TARGET_ESP_ARCH}-$${TARGET_ESP_CHIP}-elf-gdb.exe; \
+		$(CC) -DTARGET_ESP_ARCH=${TARGET_ESP_ARCH_NUM} bin_wrappers/$${PLATFORM}.c -o $$OUTPUT_FILE; \
 	done

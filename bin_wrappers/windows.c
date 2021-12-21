@@ -5,9 +5,22 @@
 #define MCPU_PREFIX "--mcpu="
 #define MCPU_BASE "esp"
 
-#define GDB_FILENAME_PREFIX "xtensa-" MCPU_BASE
-#define GDB_BASE_FILENAME "xtensa-" MCPU_BASE "-elf-gdb.exe"
-#define GDB_FILENAME_EXAMPLE "xtensa-" MCPU_BASE "XXX-elf-gdb.exe"
+#define TARGET_ESP_ARCH_XTENSA 0
+#define TARGET_ESP_ARCH_RISCV32 1
+
+#if (TARGET_ESP_ARCH == TARGET_ESP_ARCH_XTENSA)
+#define TARGET_ESP_ARCH_PREFIX "xtensa-"
+#elif (TARGET_ESP_ARCH == TARGET_ESP_ARCH_RISCV32)
+#define TARGET_ESP_ARCH_PREFIX "riscv32-"
+#else
+#error "Unknown TARGET_ESP_ARCH"
+#endif
+
+#define GDB_FILENAME_PREFIX TARGET_ESP_ARCH_PREFIX MCPU_BASE
+#define GDB_BASE_FILENAME TARGET_ESP_ARCH_PREFIX MCPU_BASE "-elf-gdb.exe"
+#define GDB_FILENAME_EXAMPLE TARGET_ESP_ARCH_PREFIX MCPU_BASE "XXX-elf-gdb.exe"
+#define GDB_NO_PYTHON_SUFFIX "no-python"
+#define GDB_EXTENSION ".exe"
 
 #define PYTHON_VERSION_BUFFER_SIZE 32
 #define PYTHON_SCRIPT_CMD_OPTION " -c "
@@ -15,9 +28,11 @@
 #define REDIRECT_STDERR_TO_NULL " 2>nul"
 #define PYTHON_MAJOR_WITH_DOT "3."
 
-static char * getModuleFileName(size_t append_memory_size);
-static char *get_filename_ptr(const char *exe_path);
+#if (TARGET_ESP_ARCH == TARGET_ESP_ARCH_XTENSA)
 static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_size);
+#endif
+static char *get_module_filename(size_t append_memory_size);
+static char *get_filename_ptr(const char *exe_path);
 static char *get_exe_path_and_mcpu_option(char *mcpu_option, const size_t mcpu_option_size);
 static char *get_cmdline(const int argc, const char **argv, const char *exe_path, const char * mcpu_option);
 static char *get_python_version(void);
@@ -39,7 +54,7 @@ int main (int argc, char **argv) {
   return 0;
 }
 
-static char * getModuleFileName(size_t append_memory_size) {
+static char *get_module_filename(size_t append_memory_size) {
   LPTSTR exe_path;
   DWORD exe_path_size;
   DWORD res;
@@ -53,7 +68,7 @@ static char * getModuleFileName(size_t append_memory_size) {
 
   // For some reasons it could be a path greater than PATH_MAX,
   // so allocate more memory until it fits to the buffer
-  while ((res = GetModuleFileName(0, exe_path, exe_path_size)) &&
+  while ((res = get_module_filename(0, exe_path, exe_path_size)) &&
        (GetLastError() == ERROR_INSUFFICIENT_BUFFER)) {
       exe_path_size *= 2;
       exe_path = realloc(exe_path, exe_path_size);
@@ -64,7 +79,7 @@ static char * getModuleFileName(size_t append_memory_size) {
   }
 
   if (!res) {
-    perror("GetModuleFileName()");
+    perror("get_module_filename()");
     abort();
   }
 
@@ -95,6 +110,7 @@ static char *get_filename_ptr(const char *exe_path) {
   return filename++;
 }
 
+#if (TARGET_ESP_ARCH == TARGET_ESP_ARCH_XTENSA)
 static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_option_size) {
   char *mcpu_start = strchr(filename, '-');
   char *mcpu_end = strchr(&filename[strlen(GDB_FILENAME_PREFIX)], '-');
@@ -115,53 +131,61 @@ static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_
 
   return;
 }
+#endif
 
 static char * get_exe_path_and_mcpu_option(char *mcpu_option, const size_t mcpu_option_size) {
-  char *exe_path;
+  char *exe_path = NULL;
+  char *base_path = NULL;
   char *filename = NULL;
   char *python_version = NULL;
+  char *python_suffix = NULL;
   size_t chars_to_remove = 0;
   char *start = NULL;
   size_t chars_to_move = 0;
 
   python_version = get_python_version();
-  exe_path = getModuleFileName(strlen(python_version));
+  exe_path = get_module_filename(max(strlen(python_version), strlen(GDB_NO_PYTHON_SUFFIX)) + 1);
   filename = get_filename_ptr(exe_path);
+
+#if (TARGET_ESP_ARCH == TARGET_ESP_ARCH_XTENSA)
   set_mcpu_option(filename, mcpu_option, mcpu_option_size);
 
-  // Remove esp mcpu
+  // Remove esp mcpu from filename
   chars_to_remove = strlen(mcpu_option) - strlen(MCPU_PREFIX) - strlen(MCPU_BASE);
   start = filename + strlen(GDB_FILENAME_PREFIX) + 1;
   chars_to_move = strlen(start) - chars_to_remove + 1;
   memmove(start, start + chars_to_remove, chars_to_move);
+#endif
 
-  // Add python version postfix if exists
-  if (strlen(python_version) != 0) {
-    char *exe_path_wo_python = strdup(exe_path);
-    if (exe_path_wo_python == NULL) {
-      perror("strdup()");
-      abort();
-    }
+  if (strlen(python_version) == 0) {
+    python_suffix = GDB_NO_PYTHON_SUFFIX;
+  } else {
+    python_suffix = python_version;
+  }
 
-    // insert python_version to the filename
-    // don't worry about buffer overflow, additionall memory for python version
-    // was allocated in getModuleFileName()
-    start = strrchr(filename, '.');
-    chars_to_move = strlen(python_version) + 1;
-    memmove(start + chars_to_move, start, strlen(filename) - strlen(start) + 1);
-    snprintf(start, chars_to_move, "-%s", python_version);
+  // insert python_version to the filename
+  // don't worry about buffer overflow, additionall memory for python version
+  // was allocated in get_module_filename()
+  base_path = strdup(exe_path);
+  if (base_path == NULL) {
+    perror("strdup()");
+    abort();
+  }
+  base_path[strlen(base_path) - strlen(GDB_EXTENSION)] = '\0';
 
-    if(GetFileAttributesA(exe_path) == INVALID_FILE_ATTRIBUTES) { // no exe file for this python version
+  sprintf(exe_path, "%s-%s%s", base_path, python_suffix, GDB_EXTENSION);
+  if(python_suffix != GDB_NO_PYTHON_SUFFIX) {
+    if (GetFileAttributesA(exe_path) == INVALID_FILE_ATTRIBUTES) { // no exe file for this python version
+      sprintf(exe_path, "%s-%s%s", base_path, GDB_NO_PYTHON_SUFFIX, GDB_EXTENSION);
       printf("Python-%s is not supported. Run without python\r\n", python_version);
-      strcpy(exe_path, exe_path_wo_python);
     } else {
       printf("Run with python-%s\r\n", python_version);
     }
-    free(exe_path_wo_python);
   } else {
-    // Notify user he/she is using GDB without python support
     printf("Run without python\r\n");
   }
+
+  free(base_path);
   fflush(stdout);
   return exe_path;
 }

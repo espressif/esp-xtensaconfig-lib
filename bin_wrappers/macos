@@ -7,28 +7,28 @@ trap on_exit EXIT
 
 run_without_python() {
 	echo "Run without python"
-	"$GDB_WRAPPER_BIN_DIR/xtensa-esp-elf-gdb" --mcpu=TARGET_CHIP "$@"
+	"$GDB_WRAPPER_BIN_DIR/TARGET_ESP_ARCH-esp-elf-gdb-no-python" TARGET_ESP_MCPU_OPTION "$@"
 	exit $?
 }
 
 GDB_WRAPPER_BIN_DIR="$(cd "$(dirname "$0")"; pwd)"
 GDB_WRAPPER_PYTHON_VERSION=$(python3 -c 'import sys; import sysconfig; print("{}.{}".format(sys.version_info.major, sys.version_info.minor)) if sysconfig.get_config_var("INSTSONAME").split(".")[-1] != "a" else exit(1)' 2> /dev/null)
 GDB_WRAPPER_PYTHON_LIB_PATH=$(python3 -c 'import sys; from sysconfig import get_config_var; from pathlib import Path; libraryPath1="%s/%s" % (get_config_var("PYTHONFRAMEWORKPREFIX"), get_config_var("INSTSONAME")); libraryPath2="%s/%s" % (get_config_var("LIBDIR"), get_config_var("INSTSONAME")); p=Path(libraryPath1); print(libraryPath1) if p.is_file() else print(libraryPath2)' 2> /dev/null)
-if [[ -n "${GDB_WRAPPER_PYTHON_VERSION}" && -x "$(command -v install_name_tool)" && -x "${GDB_WRAPPER_BIN_DIR}/xtensa-esp-elf-gdb-${GDB_WRAPPER_PYTHON_VERSION}" && -f "${GDB_WRAPPER_PYTHON_LIB_PATH}" ]]; then
-	GDB_WRAPPER_TEMP_BINARY=$(mktemp "${GDB_WRAPPER_BIN_DIR}/xtensa-esp-elf-gdb-${GDB_WRAPPER_PYTHON_VERSION}.XXXXXXX")
+if [[ -n "${GDB_WRAPPER_PYTHON_VERSION}" && -x "$(command -v install_name_tool)" && -x "${GDB_WRAPPER_BIN_DIR}/TARGET_ESP_ARCH-esp-elf-gdb-${GDB_WRAPPER_PYTHON_VERSION}" && -f "${GDB_WRAPPER_PYTHON_LIB_PATH}" ]]; then
+	GDB_WRAPPER_TEMP_BINARY=$(mktemp "${GDB_WRAPPER_BIN_DIR}/TARGET_ESP_ARCH-esp-elf-gdb-${GDB_WRAPPER_PYTHON_VERSION}.XXXXXXX")
 	if [ $? != 0 ]; then
 		echo "Error: failed to create file in \"${GDB_WRAPPER_BIN_DIR}\""
 		run_without_python
 	fi
-	cp "${GDB_WRAPPER_BIN_DIR}/xtensa-esp-elf-gdb-${GDB_WRAPPER_PYTHON_VERSION}" "${GDB_WRAPPER_TEMP_BINARY}"
+	cp "${GDB_WRAPPER_BIN_DIR}/TARGET_ESP_ARCH-esp-elf-gdb-${GDB_WRAPPER_PYTHON_VERSION}" "${GDB_WRAPPER_TEMP_BINARY}"
 	chmod 755 "${GDB_WRAPPER_TEMP_BINARY}"
 	install_name_tool -change /Library/Frameworks/Python.framework/Versions/${GDB_WRAPPER_PYTHON_VERSION}/Python "${GDB_WRAPPER_PYTHON_LIB_PATH}" "${GDB_WRAPPER_TEMP_BINARY}"
 	echo "With python-${GDB_WRAPPER_PYTHON_VERSION}"
-	"${GDB_WRAPPER_TEMP_BINARY}" --mcpu=TARGET_CHIP "$@"
+	"${GDB_WRAPPER_TEMP_BINARY}" TARGET_ESP_MCPU_OPTION "$@"
 	exit $?
 else
 	if [[ -n "${GDB_WRAPPER_PYTHON_VERSION}" && -x "$(command -v install_name_tool)" ]]; then
-		if [[ ! -x "${GDB_WRAPPER_BIN_DIR}/xtensa-esp-elf-gdb-${GDB_WRAPPER_PYTHON_VERSION}" ]]; then
+		if [[ ! -x "${GDB_WRAPPER_BIN_DIR}/TARGET_ESP_ARCH-esp-elf-gdb-${GDB_WRAPPER_PYTHON_VERSION}" ]]; then
 			echo -n "Python-${GDB_WRAPPER_PYTHON_VERSION} is not supported. "
 		elif [[ ! -f "${GDB_WRAPPER_PYTHON_LIB_PATH}" ]]; then
 			echo "Error: can not reach python lib \"${GDB_WRAPPER_PYTHON_LIB_PATH}\""
