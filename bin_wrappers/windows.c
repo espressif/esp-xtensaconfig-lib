@@ -68,7 +68,7 @@ static char *get_module_filename(size_t append_memory_size) {
 
   // For some reasons it could be a path greater than PATH_MAX,
   // so allocate more memory until it fits to the buffer
-  while ((res = get_module_filename(0, exe_path, exe_path_size)) &&
+  while ((res = GetModuleFileName(0, exe_path, exe_path_size)) &&
        (GetLastError() == ERROR_INSUFFICIENT_BUFFER)) {
       exe_path_size *= 2;
       exe_path = realloc(exe_path, exe_path_size);
@@ -79,7 +79,7 @@ static char *get_module_filename(size_t append_memory_size) {
   }
 
   if (!res) {
-    perror("get_module_filename()");
+    perror("GetModuleFileName()");
     abort();
   }
 
