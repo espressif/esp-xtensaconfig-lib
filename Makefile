@@ -85,18 +85,21 @@ ifeq ($(TARGET_ESP_ARCH), xtensa)
 endif
 
 gdb_exe_unix:
-	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	set -e
+	mkdir -p $(DESTDIR)$(PREFIX)/bin;
 	for TARGET_ESP_CHIP in ${TARGET_ESP_CHIPS} ; do \
 		OUTPUT_FILE=$(DESTDIR)$(PREFIX)/bin/$${TARGET_ESP_ARCH}-$${TARGET_ESP_CHIP}-elf-gdb; \
-		if [ ${TARGET_ESP_ARCH} == "xtensa" ]; then \
-			sed -e 's/TARGET_ESP_MCPU_OPTION/--mcpu='$${TARGET_ESP_CHIP}'/g' -e 's/TARGET_ESP_ARCH/'$${TARGET_ESP_ARCH}'/g' bin_wrappers/$$PLATFORM > $$OUTPUT_FILE ; \
+		if [ "${TARGET_ESP_ARCH}" = "xtensa" ]; then \
+			TARGET_ESP_MCPU_OPTION="--mcpu=$${TARGET_ESP_CHIP}"; \
 		else \
-			sed -e 's/TARGET_ESP_MCPU_OPTION//g' -e 's/TARGET_ESP_ARCH/'$${TARGET_ESP_ARCH}'/g' bin_wrappers/$$PLATFORM > $$OUTPUT_FILE ; \
+			TARGET_ESP_MCPU_OPTION=""; \
 		fi; \
+		sed -e 's/TARGET_ESP_MCPU_OPTION/'$${TARGET_ESP_MCPU_OPTION}'/g' -e 's/TARGET_ESP_ARCH/'$${TARGET_ESP_ARCH}'/g' bin_wrappers/$$PLATFORM > $$OUTPUT_FILE ; \
 		chmod +x $$OUTPUT_FILE; \
 	done
 
 gdb_exe_win:
+	set -e
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	for TARGET_ESP_CHIP in ${TARGET_ESP_CHIPS} ; do \
 		OUTPUT_FILE=$(DESTDIR)$(PREFIX)/bin/$${TARGET_ESP_ARCH}-$${TARGET_ESP_CHIP}-elf-gdb.exe; \
