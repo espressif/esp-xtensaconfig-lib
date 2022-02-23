@@ -3,7 +3,7 @@
 #
 
 TARGET_ESP_CHIPS = \
-	esp8266 \
+	esp32s3 \
 	esp32s2 \
 	esp32
 TARGET_ESP_ARCH ?= xtensa
