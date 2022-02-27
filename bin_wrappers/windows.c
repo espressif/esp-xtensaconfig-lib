@@ -28,6 +28,16 @@
 #define REDIRECT_STDERR_TO_NULL " 2>nul"
 #define PYTHON_MAJOR_WITH_DOT "3."
 
+#define PRINT_MESSAGE(...) \
+do                         \
+{                          \
+  if (print_messages) {    \
+    printf(__VA_ARGS__);   \
+    fflush(stdout);        \
+  }                        \
+} while(0);
+
+
 #if (TARGET_ESP_ARCH == TARGET_ESP_ARCH_XTENSA)
 static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_size);
 #endif
@@ -142,6 +152,11 @@ static char * get_exe_path_and_mcpu_option(char *mcpu_option, const size_t mcpu_
   size_t chars_to_remove = 0;
   char *start = NULL;
   size_t chars_to_move = 0;
+  int print_messages = 0;
+  char *trace_str = getenv ("ESP_DEBUG_TRACE");
+  if(trace_str) {
+    print_messages = atoi(trace_str) > 0;
+  }
 
   python_version = get_python_version();
   exe_path = get_module_filename(max(strlen(python_version), strlen(GDB_NO_PYTHON_SUFFIX)) + 1);
@@ -177,16 +192,15 @@ static char * get_exe_path_and_mcpu_option(char *mcpu_option, const size_t mcpu_
   if(python_suffix != GDB_NO_PYTHON_SUFFIX) {
     if (GetFileAttributesA(exe_path) == INVALID_FILE_ATTRIBUTES) { // no exe file for this python version
       sprintf(exe_path, "%s-%s%s", base_path, GDB_NO_PYTHON_SUFFIX, GDB_EXTENSION);
-      printf("Python-%s is not supported. Run without python\r\n", python_version);
+      PRINT_MESSAGE("Python-%s is not supported. Run without python\r\n", python_version);
     } else {
-      printf("Run with python-%s\r\n", python_version);
+      PRINT_MESSAGE("Run with python-%s\r\n", python_version);
     }
   } else {
-    printf("Run without python\r\n");
+    PRINT_MESSAGE("Run without python\r\n");
   }
 
   free(base_path);
-  fflush(stdout);
   return exe_path;
 }
 
