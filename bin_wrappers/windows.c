@@ -22,9 +22,11 @@
 #define GDB_NO_PYTHON_SUFFIX "no-python"
 #define GDB_EXTENSION ".exe"
 
-#define PYTHON_VERSION_BUFFER_SIZE 32
 #define PYTHON_SCRIPT_CMD_OPTION " -c "
-#define PYTHON_SCRIPT_GET_VERSION "\"import sys; print(\\\"{}.{}\\\".format(sys.version_info.major, sys.version_info.minor))\""
+#define PYTHON_SCRIPT_BODY "\"import sys;"\
+"print(\\\"{}.{}\\\".format(sys.version_info.major, sys.version_info.minor));"\
+"print(sys.base_prefix);\""
+
 #define REDIRECT_STDERR_TO_NULL " 2>nul"
 #define PYTHON_MAJOR_WITH_DOT "3."
 
@@ -43,27 +45,96 @@ static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_
 #endif
 static char *get_module_filename(size_t append_memory_size);
 static char *get_filename_ptr(const char *exe_path);
-static char *get_exe_path_and_mcpu_option(char *mcpu_option, const size_t mcpu_option_size);
+static char *get_exe_path_and_mcpu_option(const char *python_version, char *mcpu_option, const size_t mcpu_option_size);
 static char *get_cmdline(const int argc, const char **argv, const char *exe_path, const char * mcpu_option);
-static char *get_python_version(void);
+static void get_python_info(char **version, char **base_prefix);
 static void execute_cmdline(const char *cmdline);
+static int update_environment_variables(const char *python_base_prefix);
 
 const char *python_exe_arr[] = {"python", "python3"};
 
+int print_messages = 0;
+
+// Workflow:
+// 1. Get python version and python base_prefix. (python executables to check are in python_exe_arr)
+// 2. Set PYTHONHOME and append PATH environment variables with base_prefix from step 1
+// 3. Find GDB binary with python version from step 1. (GDB without python used if errors on steps 1,2)
+// 4. Execute GDB binary as a child process
+// 5. Disable ctrl+c and ctrl+break for this wrapper process
+// 6. Wait until GDB exit
 int main (int argc, char **argv) {
+  char *python_version;
+  char *python_base_prefix;
   char *cmdline = NULL;
   char *exe_path = NULL;
   char mcpu_option[MCPU_MAX_LEN] = {0};
+  const char *trace_str = getenv ("ESP_DEBUG_TRACE");
+  if(trace_str) {
+    print_messages = atoi(trace_str) > 0;
+  }
 
-  exe_path = get_exe_path_and_mcpu_option(mcpu_option, sizeof(mcpu_option));
+  get_python_info(&python_version, &python_base_prefix);
+  if (python_version && update_environment_variables(python_base_prefix)) {
+    // start gdb without python if setting environment was failed
+    PRINT_MESSAGE("update_environment_variables() failed, gdb without-python will be used\r\n");
+    free(python_version);
+    python_version = NULL;
+  }
+  exe_path = get_exe_path_and_mcpu_option(python_version, mcpu_option, sizeof(mcpu_option));
   cmdline = get_cmdline(argc, (const char **) argv, exe_path, mcpu_option);
   execute_cmdline(cmdline);
 
+  if (python_version) {
+    free(python_version);
+  }
+  if (python_base_prefix) {
+    free(python_base_prefix);
+  }
   free(exe_path);
   free(cmdline);
   return 0;
 }
 
+char *readline(FILE *f)
+{
+  const size_t chunk_size = 1024;
+  char *buf = calloc(1, chunk_size);
+  char *pos = buf;
+  size_t len = 0;
+  char *tmp = NULL;
+
+  if (!buf) {
+    perror("calloc()");
+    abort();
+  }
+
+  while (fgets(pos, chunk_size, f)) {
+    char *nl = strchr(pos, '\n');
+    if (nl) {
+      // newline found, replace with string terminator
+      *nl = '\0';
+      return buf;
+    }
+
+    // no newline, increase buffer size
+    len += strlen(pos);
+    tmp = realloc(buf, len + chunk_size);
+    if (!tmp) {
+      free(buf);
+      perror("realloc()");
+      abort();
+    }
+    buf = tmp;
+    pos = buf + len;
+  }
+
+  // handle case when input ends without a newline
+  if (buf[0] == '\0') {
+    free(buf);
+    buf = NULL;
+  }
+  return buf;
+}
 static char *get_module_filename(size_t append_memory_size) {
   LPTSTR exe_path;
   DWORD exe_path_size;
@@ -79,13 +150,13 @@ static char *get_module_filename(size_t append_memory_size) {
   // For some reasons it could be a path greater than PATH_MAX,
   // so allocate more memory until it fits to the buffer
   while ((res = GetModuleFileName(0, exe_path, exe_path_size)) &&
-       (GetLastError() == ERROR_INSUFFICIENT_BUFFER)) {
-      exe_path_size *= 2;
-      exe_path = realloc(exe_path, exe_path_size);
-      if (exe_path == NULL) {
-         perror("realloc()");
-         abort();
-      }
+         (GetLastError() == ERROR_INSUFFICIENT_BUFFER)) {
+    exe_path_size *= 2;
+    exe_path = realloc(exe_path, exe_path_size);
+    if (exe_path == NULL) {
+      perror("realloc()");
+      abort();
+    }
   }
 
   if (!res) {
@@ -143,23 +214,16 @@ static void set_mcpu_option(const char *filename, char *mcpu, const size_t mcpu_
 }
 #endif
 
-static char * get_exe_path_and_mcpu_option(char *mcpu_option, const size_t mcpu_option_size) {
+static char *get_exe_path_and_mcpu_option(const char *python_version, char *mcpu_option, const size_t mcpu_option_size) {
   char *exe_path = NULL;
   char *base_path = NULL;
   char *filename = NULL;
-  char *python_version = NULL;
-  char *python_suffix = NULL;
+  const char *python_suffix = python_version ? python_version : GDB_NO_PYTHON_SUFFIX;
   size_t chars_to_remove = 0;
   char *start = NULL;
   size_t chars_to_move = 0;
-  int print_messages = 0;
-  char *trace_str = getenv ("ESP_DEBUG_TRACE");
-  if(trace_str) {
-    print_messages = atoi(trace_str) > 0;
-  }
 
-  python_version = get_python_version();
-  exe_path = get_module_filename(max(strlen(python_version), strlen(GDB_NO_PYTHON_SUFFIX)) + 1);
+  exe_path = get_module_filename(strlen(python_suffix) + 1);
   filename = get_filename_ptr(exe_path);
 
 #if (TARGET_ESP_ARCH == TARGET_ESP_ARCH_XTENSA)
@@ -171,12 +235,6 @@ static char * get_exe_path_and_mcpu_option(char *mcpu_option, const size_t mcpu_
   chars_to_move = strlen(start) - chars_to_remove + 1;
   memmove(start, start + chars_to_remove, chars_to_move);
 #endif
-
-  if (strlen(python_version) == 0) {
-    python_suffix = GDB_NO_PYTHON_SUFFIX;
-  } else {
-    python_suffix = python_version;
-  }
 
   // insert python_version to the filename
   // don't worry about buffer overflow, additionall memory for python version
@@ -224,47 +282,109 @@ static char *get_cmdline(const int argc, const char **argv, const char *exe_path
   return cmdline;
 }
 
-static char *get_python_version(void) {
-  static char python_version[PYTHON_VERSION_BUFFER_SIZE] = {0};
+static int update_environment_variables(const char *python_base_prefix) {
+  int ret = -1;
+  DWORD path_var_size = 0;
+  char *buf = NULL;
+  int len = 0;
+
+  if (!python_base_prefix) {
+    PRINT_MESSAGE("%s: python_base_prefix is NULL\r\n", __FUNCTION__);
+    goto error;
+  }
+
+  // If buffer is not large enough, the return value is the number of
+  // characters including the terminating null character.
+  path_var_size = GetEnvironmentVariable("PATH", NULL, 0); // get size of PATH variable
+
+  // alloc memory for existing PATH + python_base_prefix + ';' delimeter + '\0'
+  buf = (char *)malloc(path_var_size + strlen(python_base_prefix) + 2);
+  if (!buf) {
+    perror("malloc()");
+    abort();
+  }
+
+  // start PATH with directory contains python*.dll
+  len = sprintf(buf, "%s;", python_base_prefix);
+  if (len < strlen(python_base_prefix) + 1) {
+    PRINT_MESSAGE("Error writing python_base_prefix '%s' to buf (%d)\r\n", python_base_prefix, len);
+    goto error;
+  }
+
+  // If the function succeeds, the return value is the number of characters
+  // NOT including the terminating null character.
+  if ((path_var_size - 1) != GetEnvironmentVariable("PATH", &buf[len], path_var_size)) {
+    PRINT_MESSAGE("GetEnvironmentVariable() failed to get. PATH length changed??\r\n");
+    goto error;
+  }
+  if (!SetEnvironmentVariable("PATH", buf)) {
+    PRINT_MESSAGE("SetEnvironmentVariable(PATH) failed: %s\r\n", GetLastError());
+    goto error;
+  }
+
+  // Set PYTHONHOME to have base python modules
+  if (!SetEnvironmentVariable("PYTHONHOME", python_base_prefix)) {
+    PRINT_MESSAGE("SetEnvironmentVariable(PYTHONHOME) failed: %s\r\n", GetLastError());
+    goto error;
+  }
+
+  ret = 0;
+error:
+  if (buf) {
+    free(buf);
+  }
+  return ret;
+}
+
+static void get_python_info(char **version, char **base_prefix) {
   char *tmp = NULL;
   const size_t python_exe_arr_size = sizeof(python_exe_arr) / sizeof(python_exe_arr[0]);
   size_t i = 0;
+
+  if (version == NULL || base_prefix == NULL) {
+    fprintf(stderr, "%s: bad input parameters (%p %p)\n", __FUNCTION__, version, base_prefix);
+    abort();
+  }
+
+  *version = NULL;
+  *base_prefix = NULL;
+
   for (i = 0; i < python_exe_arr_size; i++) {
     FILE* pipe = NULL;
     char *python_cmd = malloc(strlen(python_exe_arr[i]) +
                               strlen(PYTHON_SCRIPT_CMD_OPTION) +
-                              strlen(PYTHON_SCRIPT_GET_VERSION) +
+                              strlen(PYTHON_SCRIPT_BODY) +
                               strlen(REDIRECT_STDERR_TO_NULL) +
                               1);
     sprintf(python_cmd, "%s%s%s%s", python_exe_arr[i],
-                                    PYTHON_SCRIPT_CMD_OPTION,
-                                    PYTHON_SCRIPT_GET_VERSION,
-                                    REDIRECT_STDERR_TO_NULL);
+            PYTHON_SCRIPT_CMD_OPTION,
+            PYTHON_SCRIPT_BODY,
+            REDIRECT_STDERR_TO_NULL);
 
     pipe = popen(python_cmd, "r");
+    free(python_cmd);
+
     if (pipe == NULL) {
-      free(python_cmd);
       continue;
     }
 
-    fgets(python_version, sizeof(python_version), pipe);
-    pclose(pipe);
-    free(python_cmd);
-
-    if (strncmp(python_version, PYTHON_MAJOR_WITH_DOT, strlen(PYTHON_MAJOR_WITH_DOT)) == 0) {
-      break;
-    } else {
-      python_version[0] = 0;
+    *version = readline(pipe);
+    if (*version == NULL) {
+      pclose(pipe);
+      continue;
     }
-  }
 
-  // find newline character and override it with \0
-  tmp = strchr(python_version, '\n');
-  if (tmp != NULL) {
-    *tmp = '\0';
-  }
+    PRINT_MESSAGE("Found python version: %s\r\n", *version);
+    if (strncmp(*version, PYTHON_MAJOR_WITH_DOT, strlen(PYTHON_MAJOR_WITH_DOT)) == 0) {
+      *base_prefix = readline(pipe);
+      pclose(pipe);
+      break;
+    }
 
-  return python_version;
+    free(*version);
+    *version = NULL;
+    pclose(pipe);
+  }
 }
 
 static void execute_cmdline(const char *cmdline) {
@@ -275,20 +395,23 @@ static void execute_cmdline(const char *cmdline) {
   si.cb = sizeof(si);
   ZeroMemory(&pi, sizeof(pi));
 
-  if (!CreateProcessA(NULL, // No module name (use command line)
-       (char *) cmdline,    // Command line
-       NULL,                // Process handle not inheritable
-       NULL,                // Thread handle not inheritable
-       FALSE,               // Set handle inheritance to FALSE
-       0,                   // No creation flags
-       NULL,                // Use parent's environment block
-       NULL,                // Use parent's starting directory
-       &si,                 // Pointer to STARTUPINFO structure
-       &pi)                 // Pointer to PROCESS_INFORMATION structure
+  if (!CreateProcessA(NULL,                // No module name (use command line)
+                      (char *) cmdline,    // Command line
+                      NULL,                // Process handle not inheritable
+                      NULL,                // Thread handle not inheritable
+                      FALSE,               // Set handle inheritance to FALSE
+                      0,                   // No creation flags
+                      NULL,                // Use parent's environment block
+                      NULL,                // Use parent's starting directory
+                      &si,                 // Pointer to STARTUPINFO structure
+                      &pi)                 // Pointer to PROCESS_INFORMATION structure
      ) {
     fprintf(stderr, "Can't execute \"%s\"\nError: %s", cmdline, GetLastError());
     abort();
   }
+
+  // Disable ctrl+c handling for this GDB wrapper
+  SetConsoleCtrlHandler(NULL, TRUE);
 
   // Wait until child process exits.
   WaitForSingleObject(pi.hProcess, INFINITE);
