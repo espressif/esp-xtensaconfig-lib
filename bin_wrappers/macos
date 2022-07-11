@@ -25,21 +25,27 @@ if [[ -n "${GDB_WRAPPER_PYTHON_VERSION}" && -x "$(command -v install_name_tool)"
 	GDB_WRAPPER_TEMP_BINARY=$(mktemp "${GDB_WRAPPER_BIN_DIR}/TARGET_ESP_ARCH-esp-elf-gdb-${GDB_WRAPPER_PYTHON_VERSION}.XXXXXXX")
 	if [ $? != 0 ]; then
 		print_message "Error: failed to create file in \"${GDB_WRAPPER_BIN_DIR}\""
-		run_without_python
+		run_without_python "$@"
 	fi
 	cp "${GDB_WRAPPER_BIN_DIR}/TARGET_ESP_ARCH-esp-elf-gdb-${GDB_WRAPPER_PYTHON_VERSION}" "${GDB_WRAPPER_TEMP_BINARY}"
 	chmod 755 "${GDB_WRAPPER_TEMP_BINARY}"
 	install_name_tool -change /Library/Frameworks/Python.framework/Versions/${GDB_WRAPPER_PYTHON_VERSION}/Python "${GDB_WRAPPER_PYTHON_LIB_PATH}" "${GDB_WRAPPER_TEMP_BINARY}"
 	print_message "With python-${GDB_WRAPPER_PYTHON_VERSION}"
-	"${GDB_WRAPPER_TEMP_BINARY}" TARGET_ESP_MCPU_OPTION "$@"
+	("${GDB_WRAPPER_TEMP_BINARY}" TARGET_ESP_MCPU_OPTION --batch-silent && exit 0) 2> /dev/null
+	if [ $? == 0 ]; then
+		"${GDB_WRAPPER_TEMP_BINARY}" TARGET_ESP_MCPU_OPTION "$@"
+	else
+		print_message "Fallback: can not run GDB with python support"
+		run_without_python "$@"
+	fi
 	exit $?
 else
 	if [[ -n "${GDB_WRAPPER_PYTHON_VERSION}" && -x "$(command -v install_name_tool)" ]]; then
 		if [[ ! -x "${GDB_WRAPPER_BIN_DIR}/TARGET_ESP_ARCH-esp-elf-gdb-${GDB_WRAPPER_PYTHON_VERSION}" ]]; then
-			print_message "Python-${GDB_WRAPPER_PYTHON_VERSION} is not supported.echo"
+			print_message "Python-${GDB_WRAPPER_PYTHON_VERSION} is not supported"
 		elif [[ ! -f "${GDB_WRAPPER_PYTHON_LIB_PATH}" ]]; then
 			print_message "Error: can not reach python lib \"${GDB_WRAPPER_PYTHON_LIB_PATH}\""
 		fi
 	fi
-	run_without_python
+	run_without_python "$@"
 fi
