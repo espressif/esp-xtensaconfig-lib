@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <windows.h>
+#include <stdbool.h>
 
 #define MCPU_MAX_LEN 16
 #define MCPU_PREFIX "--mcpu="
@@ -21,6 +22,8 @@
 #define GDB_FILENAME_EXAMPLE TARGET_ESP_ARCH_PREFIX MCPU_BASE "XXX-elf-gdb.exe"
 #define GDB_NO_PYTHON_SUFFIX "no-python"
 #define GDB_EXTENSION ".exe"
+
+#define GDB_ARG_BATCH_SILENT "--batch-silent"
 
 #define PYTHON_SCRIPT_CMD_OPTION " -c "
 #define PYTHON_SCRIPT_BODY "\"import sys;"\
@@ -48,8 +51,9 @@ static char *get_filename_ptr(const char *exe_path);
 static char *get_exe_path_and_mcpu_option(const char *python_version, char *mcpu_option, const size_t mcpu_option_size);
 static char *get_cmdline(const int argc, const char **argv, const char *exe_path, const char * mcpu_option);
 static void get_python_info(char **version, char **base_prefix);
-static void execute_cmdline(const char *cmdline);
+static int execute_cmdline(const char *cmdline);
 static int update_environment_variables(const char *python_base_prefix);
+static int run_gdb(const char *python_version, const int argc, const char ** argv);
 
 const char *python_exe_arr[] = {"python", "python3"};
 
@@ -65,10 +69,8 @@ int print_messages = 0;
 int main (int argc, char **argv) {
   char *python_version;
   char *python_base_prefix;
-  char *cmdline = NULL;
-  char *exe_path = NULL;
-  char mcpu_option[MCPU_MAX_LEN] = {0};
   const char *trace_str = getenv ("ESP_DEBUG_TRACE");
+  int exit_code = 0;
   if(trace_str) {
     print_messages = atoi(trace_str) > 0;
   }
@@ -80,19 +82,42 @@ int main (int argc, char **argv) {
     free(python_version);
     python_version = NULL;
   }
-  exe_path = get_exe_path_and_mcpu_option(python_version, mcpu_option, sizeof(mcpu_option));
-  cmdline = get_cmdline(argc, (const char **) argv, exe_path, mcpu_option);
-  execute_cmdline(cmdline);
+
+  if (python_base_prefix) {
+    free(python_base_prefix);
+  }
+
+  if (python_version) {
+    // run GDB with-python to check if it executes well
+    char *test_argv[2] = { NULL, GDB_ARG_BATCH_SILENT };
+    if (run_gdb(python_version, 2, (const char **) test_argv)) {
+      PRINT_MESSAGE("GDB with-python test execution failed, use no-python GDB\r\n");
+      free(python_version);
+      python_version = NULL;
+    }
+  }
+
+  exit_code = run_gdb(python_version, (const int) argc, (const char **) argv);
 
   if (python_version) {
     free(python_version);
   }
-  if (python_base_prefix) {
-    free(python_base_prefix);
-  }
+  return exit_code;
+}
+
+static int run_gdb(const char *python_version, const int argc, const char ** argv) {
+  char *cmdline = NULL;
+  char *exe_path = NULL;
+  char mcpu_option[MCPU_MAX_LEN] = {0};
+  int exit_code = 0;
+
+  exe_path = get_exe_path_and_mcpu_option(python_version, mcpu_option, sizeof(mcpu_option));
+  cmdline = get_cmdline(argc, argv, exe_path, mcpu_option);
+  exit_code = execute_cmdline(cmdline);
+
   free(exe_path);
   free(cmdline);
-  return 0;
+  return exit_code;
 }
 
 char *readline(FILE *f)
@@ -270,14 +295,15 @@ static char *get_cmdline(const int argc, const char **argv, const char *exe_path
   }
   sprintf(cmdline, "%s %s", exe_path, mcpu_option);
 
+  // Append with user's arguments. Protect them with quotes
   for (int i = 1; i < argc; i++) {
     size_t cur_len = strlen(cmdline);
-    cmdline = realloc(cmdline, cur_len + strlen(argv[i]) + 2);
+    cmdline = realloc(cmdline, cur_len + strlen(argv[i]) + 4);
     if (cmdline == NULL) {
       perror("realloc");
       abort();
     }
-    sprintf(&cmdline[cur_len], " %s", argv[i]);
+    sprintf(&cmdline[cur_len], " \"%s\"", argv[i]);
   }
   return cmdline;
 }
@@ -387,9 +413,12 @@ static void get_python_info(char **version, char **base_prefix) {
   }
 }
 
-static void execute_cmdline(const char *cmdline) {
+static int execute_cmdline(const char *cmdline) {
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
+  DWORD exit_code = 0;
+
+  PRINT_MESSAGE("Executing: \"%s\"\r\n", cmdline);
 
   ZeroMemory(&si, sizeof(si));
   si.cb = sizeof(si);
@@ -416,7 +445,13 @@ static void execute_cmdline(const char *cmdline) {
   // Wait until child process exits.
   WaitForSingleObject(pi.hProcess, INFINITE);
 
+  // Get exit code of child process
+  GetExitCodeProcess(pi.hProcess, &exit_code);
+  PRINT_MESSAGE("Exit code is %d\r\n", exit_code);
+
   // Close process and thread handles.
   CloseHandle(pi.hProcess);
   CloseHandle(pi.hThread);
+
+  return (int) exit_code;
 }
