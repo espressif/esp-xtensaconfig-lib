@@ -51,9 +51,9 @@ static char *get_filename_ptr(const char *exe_path);
 static char *get_exe_path_and_mcpu_option(const char *python_version, char *mcpu_option, const size_t mcpu_option_size);
 static char *get_cmdline(const int argc, const char **argv, const char *exe_path, const char * mcpu_option);
 static void get_python_info(char **version, char **base_prefix);
-static int execute_cmdline(const char *cmdline);
+static int execute_cmdline(const char *cmdline, BOOL test_run);
 static int update_environment_variables(const char *python_base_prefix);
-static int run_gdb(const char *python_version, const int argc, const char ** argv);
+static int run_gdb(const char *python_version, const int argc, const char ** argv, BOOL test_run);
 
 const char *python_exe_arr[] = {"python", "python3"};
 
@@ -90,14 +90,14 @@ int main (int argc, char **argv) {
   if (python_version) {
     // run GDB with-python to check if it executes well
     char *test_argv[2] = { NULL, GDB_ARG_BATCH_SILENT };
-    if (run_gdb(python_version, 2, (const char **) test_argv)) {
+    if (run_gdb(python_version, 2, (const char **) test_argv, TRUE)) {
       PRINT_MESSAGE("GDB with-python test execution failed, use no-python GDB\r\n");
       free(python_version);
       python_version = NULL;
     }
   }
 
-  exit_code = run_gdb(python_version, (const int) argc, (const char **) argv);
+  exit_code = run_gdb(python_version, (const int) argc, (const char **) argv, FALSE);
 
   if (python_version) {
     free(python_version);
@@ -105,7 +105,7 @@ int main (int argc, char **argv) {
   return exit_code;
 }
 
-static int run_gdb(const char *python_version, const int argc, const char ** argv) {
+static int run_gdb(const char *python_version, const int argc, const char ** argv, BOOL test_run) {
   char *cmdline = NULL;
   char *exe_path = NULL;
   char mcpu_option[MCPU_MAX_LEN] = {0};
@@ -113,7 +113,7 @@ static int run_gdb(const char *python_version, const int argc, const char ** arg
 
   exe_path = get_exe_path_and_mcpu_option(python_version, mcpu_option, sizeof(mcpu_option));
   cmdline = get_cmdline(argc, argv, exe_path, mcpu_option);
-  exit_code = execute_cmdline(cmdline);
+  exit_code = execute_cmdline(cmdline, test_run);
 
   free(exe_path);
   free(cmdline);
@@ -413,7 +413,7 @@ static void get_python_info(char **version, char **base_prefix) {
   }
 }
 
-static int execute_cmdline(const char *cmdline) {
+static int execute_cmdline(const char *cmdline, BOOL test_run) {
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
   DWORD exit_code = 0;
@@ -424,11 +424,14 @@ static int execute_cmdline(const char *cmdline) {
   si.cb = sizeof(si);
   ZeroMemory(&pi, sizeof(pi));
 
+  // Do not show popup boxes with errors on test run
+  SetErrorMode(test_run ? (SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX) : 0);
+
   if (!CreateProcessA(NULL,                // No module name (use command line)
                       (char *) cmdline,    // Command line
                       NULL,                // Process handle not inheritable
                       NULL,                // Thread handle not inheritable
-                      FALSE,               // Set handle inheritance to FALSE
+                      TRUE,                // Set handle inheritance to TRUE
                       0,                   // No creation flags
                       NULL,                // Use parent's environment block
                       NULL,                // Use parent's starting directory
@@ -439,8 +442,11 @@ static int execute_cmdline(const char *cmdline) {
     abort();
   }
 
-  // Disable ctrl+c handling for this GDB wrapper
-  SetConsoleCtrlHandler(NULL, TRUE);
+  if (!test_run) {
+    // Disable ctrl+c handling for this GDB wrapper
+    // Setting this on test-run breaks Ctrl handlings on target GDB
+    SetConsoleCtrlHandler(NULL, TRUE);
+  }
 
   // Wait until child process exits.
   WaitForSingleObject(pi.hProcess, INFINITE);
