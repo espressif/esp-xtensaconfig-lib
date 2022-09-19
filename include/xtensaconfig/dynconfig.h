@@ -88,7 +88,7 @@ struct xtensa_config {
 
 typedef struct xtensa_isa_internal_struct xtensa_isa_internal;
 
-extern const void *xtensa_load_config (const char *name, void *def);
+extern const void *xtensa_load_config (const char *name, const void *def);
 extern struct xtensa_config *xtensa_get_config (int opt_dbg);
 
 #ifdef XTENSA_CONFIG_DEFINITION

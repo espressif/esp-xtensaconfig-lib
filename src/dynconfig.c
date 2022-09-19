@@ -256,7 +256,7 @@ static void xtensa_load_shared_lib(void **handle, const char *xtensaconfig_optio
   ESP_LOG_INFO("Lib \"%s\" loaded", lib_file);
 }
 
-const void *xtensa_load_config (const char *symbol, void *dummy_data)
+const void *xtensa_load_config (const char *symbol, const void *dummy_data)
 {
   static void *s_handle = NULL;
   const char *xtensaconfig_option = xtensaconfig_get_option();

@@ -8,8 +8,10 @@ TARGET_ESP_CHIPS = \
 	esp32
 TARGET_ESP_ARCH ?= xtensa
 
-CC ?= gcc
-AR ?= ar
+CROSS_COMPILE ?= ""
+CC = $(CROSS_COMPILE)gcc
+CXX = $(CROSS_COMPILE)g++
+AR = $(CROSS_COMPILE)ar
 
 ifeq ($(TARGET_ESP_ARCH), xtensa)
 TARGET_ESP_ARCH_NUM = 0
