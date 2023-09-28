@@ -6,21 +6,13 @@ TARGET_ESP_CHIPS = \
 	esp32s3 \
 	esp32s2 \
 	esp32
-TARGET_ESP_ARCH ?= xtensa
 
 CROSS_COMPILE ?= ""
 CC = $(CROSS_COMPILE)gcc
 CXX = $(CROSS_COMPILE)g++
 AR = $(CROSS_COMPILE)ar
 
-ifeq ($(TARGET_ESP_ARCH), xtensa)
-TARGET_ESP_ARCH_NUM = 0
 lib: libxtensaconfig-default.a libxtensaconfig-gdb.a $(patsubst %,xtensaconfig-%.so,$(TARGET_ESP_CHIPS))
-else
-TARGET_ESP_ARCH_NUM = 1
-TARGET_ESP_CHIPS = esp
-lib:
-endif
 
 OBJ_DIR=./obj
 
@@ -72,38 +64,6 @@ clean:
 	rm -fr *.so *.a $(OBJ_DIR)
 
 
-ifeq ($(PLATFORM),)
 install: lib
-else
-ifeq ($(PLATFORM),windows)
-install: lib gdb_exe_win
-else
-install: lib gdb_exe_unix
-endif
-endif
-ifeq ($(TARGET_ESP_ARCH), xtensa)
 	mkdir -p $(DESTDIR)$(PREFIX)/lib
 	cp -f *.so $(DESTDIR)$(PREFIX)/lib
-endif
-
-gdb_exe_unix:
-	set -e
-	mkdir -p $(DESTDIR)$(PREFIX)/bin;
-	for TARGET_ESP_CHIP in ${TARGET_ESP_CHIPS} ; do \
-		OUTPUT_FILE=$(DESTDIR)$(PREFIX)/bin/$${TARGET_ESP_ARCH}-$${TARGET_ESP_CHIP}-elf-gdb; \
-		if [ "${TARGET_ESP_ARCH}" = "xtensa" ]; then \
-			TARGET_ESP_MCPU_OPTION="--mcpu=$${TARGET_ESP_CHIP}"; \
-		else \
-			TARGET_ESP_MCPU_OPTION=""; \
-		fi; \
-		sed -e 's/TARGET_ESP_MCPU_OPTION/'$${TARGET_ESP_MCPU_OPTION}'/g' -e 's/TARGET_ESP_ARCH/'$${TARGET_ESP_ARCH}'/g' bin_wrappers/$$PLATFORM > $$OUTPUT_FILE ; \
-		chmod +x $$OUTPUT_FILE; \
-	done
-
-gdb_exe_win:
-	set -e
-	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	for TARGET_ESP_CHIP in ${TARGET_ESP_CHIPS} ; do \
-		OUTPUT_FILE=$(DESTDIR)$(PREFIX)/bin/$${TARGET_ESP_ARCH}-$${TARGET_ESP_CHIP}-elf-gdb.exe; \
-		$(CC) -DTARGET_ESP_ARCH=${TARGET_ESP_ARCH_NUM} bin_wrappers/$${PLATFORM}.c -o $$OUTPUT_FILE; \
-	done
